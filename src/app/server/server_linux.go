@@ -81,8 +81,10 @@ func checkHealth() error {
 	return nil
 }
 
-// GetInferenceInfo returns empty inference info on Linux.
+// GetInferenceInfo returns inference info on Linux.
 // GPU details come directly from the running systemd-managed server.
+// DefaultContextLength is set to Ollama's default num_ctx so the
+// context length slider in Settings is enabled.
 func GetInferenceInfo(_ context.Context) (*InferenceInfo, error) {
-	return &InferenceInfo{}, nil
+	return &InferenceInfo{DefaultContextLength: 8192}, nil
 }

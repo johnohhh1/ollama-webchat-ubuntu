@@ -340,6 +340,18 @@ index 2d1b07a..85af1ae 100644
            <Link
              href="/settings"
              className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:text-neutral-300`}
+diff --git a/app/ui/app/src/components/Settings.tsx b/app/ui/app/src/components/Settings.tsx
+index 3f0f5c4..c5cb935 100644
+--- a/app/ui/app/src/components/Settings.tsx
++++ b/app/ui/app/src/components/Settings.tsx
+@@ -301,6 +301,7 @@ export default function Settings() {
+         {!isWindows && (
+           <button
+             onClick={handleCloseSettings}
++            onMouseDown={(e) => e.stopPropagation()}
+             className="p-1 hover:bg-neutral-100 mr-3 dark:hover:bg-neutral-800 rounded-full"
+           >
+             <XMarkIcon className="w-6 h-6 dark:text-white" />
 diff --git a/app/ui/extract.go b/app/ui/extract.go
 index fd710a6..36ffdf0 100644
 --- a/app/ui/extract.go

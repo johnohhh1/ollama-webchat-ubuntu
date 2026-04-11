@@ -1,10 +1,24 @@
+<div align="center">
+
+<img src="assets/Ohhhllama.png" alt="Ollama Desktop Linux" width="180" />
+
 # Ollama Desktop — Linux (Ubuntu/GTK)
 
-Native GTK3 + WebKit2GTK desktop app for [Ollama](https://ollama.com) on Linux.
+**Native GTK3 + WebKit2GTK desktop app for [Ollama](https://ollama.com) on Linux.**
 
-This is a Linux port of the official Ollama desktop app (from the main [ollama/ollama](https://github.com/ollama/ollama) repo). The official app ships Windows and macOS binaries only. This port removes that restriction.
+[![Platform](https://img.shields.io/badge/platform-Linux-blue?logo=linux&logoColor=white)](https://github.com/johnohhh1/ollama-webchat-ubuntu)
+[![GTK](https://img.shields.io/badge/GTK-3.0-green?logo=gnome&logoColor=white)](https://gtk.org)
+[![WebKit](https://img.shields.io/badge/WebKit2GTK-4.1-orange)](https://webkitgtk.org)
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![Ollama](https://img.shields.io/badge/Ollama-v0.20.6-black)](https://ollama.com)
+[![License](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 
-**Tested on:** Ubuntu 26.04 (GNOME 50, Wayland). Should work on any GTK3 desktop.
+This is a Linux port of the official Ollama desktop app (from the main [ollama/ollama](https://github.com/ollama/ollama) repo).  
+The official app ships Windows and macOS binaries only. **This port removes that restriction.**
+
+**Tested on:** Ubuntu 26.04 · GNOME 50 · Wayland · NVIDIA RTX 5070
+
+</div>
 
 ---
 
@@ -14,6 +28,9 @@ This is a Linux port of the official Ollama desktop app (from the main [ollama/o
 - Talks to your existing Ollama service at `localhost:11434` — does **not** start or manage the Ollama daemon
 - Full chat UI: model selection, file attachments, settings, chat history (SQLite)
 - Single-instance lockfile, zenity file/folder dialogs, dark mode
+- Wayland-native — no XWayland required
+
+---
 
 ## Prerequisites
 
@@ -32,17 +49,23 @@ sudo apt install \
     pkg-config git
 ```
 
-Go 1.21+ required. Check with `go version`.
+> Go 1.21+ required. Check with `go version`.
 
 ---
 
-## Build
+## Build & Install
 
 ```bash
 git clone https://github.com/johnohhh1/ollama-webchat-ubuntu.git
 cd ollama-webchat-ubuntu
 bash build.sh
 ```
+
+The script will:
+1. Clone ollama at the pinned tag
+2. Apply the Linux port patch
+3. Build the React frontend (`npm run build`)
+4. Compile the Go binary
 
 The binary lands at `build/ollama-app`. Install it:
 
@@ -60,34 +83,33 @@ Make sure Ollama is running:
 ollama serve   # or: sudo systemctl start ollama
 ```
 
-Then launch the app:
+Launch the app:
 
 ```bash
 ollama-app
 ```
 
-Or find it in your application launcher (if you created a `.desktop` entry).
+Or search for it in your application launcher.
 
 ### Stale lockfile
 
 If the app crashes without cleaning up, delete the lock before restarting:
 
 ```bash
-rm -f ~/.ollama/app.lock
-ollama-app
+rm -f ~/.ollama/app.lock && ollama-app
 ```
 
 ---
 
 ## How the port works
 
-The upstream `app/` directory was gated with `//go:build windows || darwin` on ~40 files. The underlying C webview library (`webview.h`) already has full GTK/WebKit2GTK support — only the Go build tags blocked Linux.
+The upstream `app/` directory was gated with `//go:build windows || darwin` on ~40 files. The underlying C webview library (`webview.h`) already has full GTK/WebKit2GTK Linux support built in — only the Go build tags were blocking Linux compilation.
 
-Changes made:
+### Changes made
 
-| Type | What |
-|------|------|
-| Build tag | `windows \|\| darwin` → `windows \|\| darwin \|\| linux` on ~40 files |
+| File / Area | Change |
+|---|---|
+| ~40 `app/**/*.go` files | Build tag: `windows \|\| darwin` → `windows \|\| darwin \|\| linux` |
 | `app/webview/webview.go` | Added Linux CGo flags: `WEBVIEW_GTK`, `gtk+-3.0`, `webkit2gtk-4.1` |
 | `app/cmd/app/app_linux.go` | GTK window management, lockfile single-instance, signal cleanup |
 | `app/cmd/app/webview_linux.go` | Webview struct + JS bindings (show/hide/drag/zoom/file picker) |
@@ -99,9 +121,29 @@ Changes made:
 
 ---
 
-## EGL warnings on startup
+## Known issues
 
-On NVIDIA proprietary drivers you'll see Mesa EGL warnings — these are harmless. WebKit falls back to Cairo software rendering for compositing. For a chat UI this is imperceptible.
+### EGL warnings on startup
+
+On NVIDIA proprietary drivers you'll see Mesa EGL warnings — these are **harmless**. WebKit falls back to Cairo software rendering for the compositor. For a chat UI this is imperceptible.
+
+```
+libEGL warning: egl: failed to create dri2 screen
+libEGL warning: pci id for fd N: 10de:XXXX, driver (null)
+```
+
+---
+
+## Compatibility
+
+| Distro | GTK | WebKit | Status |
+|--------|-----|--------|--------|
+| Ubuntu 26.04 | 3.24 | 4.1 | Tested |
+| Ubuntu 24.04 | 3.24 | 4.1 | Should work |
+| Fedora 40+ | 3.24 | 4.1 | Should work |
+| Arch Linux | 3.24 | 4.1 | Should work |
+
+> Requires `webkit2gtk-4.1`. Ubuntu 22.04 ships `4.0` only — not compatible without a PPA.
 
 ---
 

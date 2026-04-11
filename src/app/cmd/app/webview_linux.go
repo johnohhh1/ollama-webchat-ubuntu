@@ -118,7 +118,9 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		})
 
 		wv.Bind("close", func() {
-			hideWindow(wv.Window())
+			// On Linux there is no system tray to restore from, so closing
+			// the window should quit the app entirely rather than hiding it.
+			quit()
 		})
 
 		// File system access (file attachment in chat)

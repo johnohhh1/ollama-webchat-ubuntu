@@ -28,6 +28,10 @@ type Webview struct {
 	Store *store.Store
 }
 
+// gtkDispatch schedules f on the GTK main thread.
+// Set once the inner webview is created; safe to call from any goroutine.
+var gtkDispatch func(func())
+
 // Run initialises the webview window and navigates to path.
 // Must be called from the main OS thread (ensured by webview.init()).
 func (w *Webview) Run(path string) unsafe.Pointer {
@@ -118,9 +122,9 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		})
 
 		wv.Bind("close", func() {
-			// On Linux there is no system tray to restore from, so closing
-			// the window should quit the app entirely rather than hiding it.
-			quit()
+			// Hide the window — the tray keeps the app alive.
+			// Use the tray "Quit" menu item to exit entirely.
+			hideWindow(wv.Window())
 		})
 
 		// File system access (file attachment in chat)
@@ -274,8 +278,11 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		wv.SetSize(800, 600, webview.HintMin)
 
 		w.webview = wv
+		gtkDispatch = wv.Dispatch    // expose dispatch for tray health-check
+		initTray(wv.Window())        // create tray + intercept GTK X button
+		startTrayHealthCheck()       // background health poller
 		wv.Navigate(url)
-		wv.Run() // blocks until window closed
+		wv.Run() // blocks until quit() calls wv.Terminate()
 	} else {
 		w.webview.Eval(fmt.Sprintf(`history.pushState({}, '', '%s');`, path))
 		showWindow(w.webview.Window())

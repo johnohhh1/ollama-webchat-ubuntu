@@ -107,10 +107,8 @@ func osRun(cancel func(), hasCompletedFirstRun, startHidden bool) {
 	if !startHidden {
 		wv.Run("/")
 	}
-	// wv.Run("/") blocks until the window is closed (webview event loop).
-	// When it returns the user closed the window via the GTK X button;
-	// clean up the lockfile so the app can be relaunched.
-	removeLock()
+	// wv.Run("/") blocks until quit() calls wv.Terminate().
+	// quit() already called removeLock() before terminating.
 	cancel()
 }
 

@@ -18,11 +18,8 @@ static void cb_open(GtkMenuItem *item, gpointer d) { go_tray_open(); }
 static void cb_quit(GtkMenuItem *item, gpointer d) { go_tray_quit(); }
 
 static void tray_init(const char *icon_name) {
-	g_indicator = APP_INDICATOR(g_object_new(APP_INDICATOR_TYPE,
-		"id",       "ollama-app",
-		"icon-name", icon_name,
-		"category",  APP_INDICATOR_CATEGORY_APPLICATION_STATUS,
-		NULL));
+	g_indicator = app_indicator_new("ollama-app", icon_name,
+		APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
 
 	GtkWidget *menu = gtk_menu_new();
 

@@ -1,0 +1,153 @@
+diff --git a/app/ui/responses/types.go b/app/ui/responses/types.go
+index 35597d3..1480288 100644
+--- a/app/ui/responses/types.go
++++ b/app/ui/responses/types.go
+@@ -55,7 +55,7 @@ type ModelCapabilitiesResponse struct {
+ 
+ // ChatEvent is for regular chat messages and assistant interactions
+ type ChatEvent struct {
+-	EventName string `json:"eventName" ts_type:"\"chat\" | \"thinking\" | \"assistant_with_tools\" | \"tool_call\" | \"tool\" | \"tool_result\" | \"done\" | \"chat_created\""`
++	EventName string `json:"eventName" ts_type:"\"chat\" | \"thinking\" | \"assistant_with_tools\" | \"tool_call\" | \"tool\" | \"tool_result\" | \"done\" | \"chat_created\" | \"image_progress\" | \"image\""`
+ 
+ 	// Chat/Assistant message fields
+ 	Content           *string    `json:"content,omitempty"`
+@@ -75,6 +75,11 @@ type ChatEvent struct {
+ 
+ 	// Tool state field from the new code
+ 	ToolState any `json:"toolState,omitempty"`
++
++	// Image generation fields
++	Image     *string `json:"image,omitempty"`
++	Completed *int64  `json:"completed,omitempty"`
++	Total     *int64  `json:"total,omitempty"`
+ }
+ 
+ // DownloadEvent is for model download progress
+@@ -126,6 +131,11 @@ type ChatRequest struct {
+ 	FileTools   *bool        `json:"file_tools,omitempty"`
+ 	ForceUpdate bool         `json:"forceUpdate,omitempty"`
+ 	Think       any          `json:"think,omitempty"`
++
++	// Image generation parameters
++	Width  *int32 `json:"width,omitempty"`
++	Height *int32 `json:"height,omitempty"`
++	Steps  *int32 `json:"steps,omitempty"`
+ }
+ 
+ type Error struct {
+diff --git a/app/ui/ui.go b/app/ui/ui.go
+index 306f2c0..384bad9 100644
+--- a/app/ui/ui.go
++++ b/app/ui/ui.go
+@@ -91,8 +91,10 @@ const (
+ 	EventLoading    Event = "loading"
+ 	EventToolResult Event = "tool_result" // Used for both tool calls and their results
+ 	EventThinking   Event = "thinking"
+-	EventToolCall   Event = "tool_call"
+-	EventDownload   Event = "download"
++	EventToolCall      Event = "tool_call"
++	EventDownload      Event = "download"
++	EventImageProgress Event = "image_progress"
++	EventImage         Event = "image"
+ )
+ 
+ type Server struct {
+@@ -815,6 +817,98 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) error {
+ 		return nil
+ 	}
+ 	think := slices.Contains(details.Capabilities, model.CapabilityThinking)
++	isImageModel := slices.Contains(details.Capabilities, model.CapabilityImage)
++
++	// Image generation models use /api/generate, not /api/chat
++	if isImageModel {
++		genReq := &api.GenerateRequest{
++			Model:  req.Model,
++			Prompt: req.Prompt,
++		}
++		if req.Width != nil {
++			genReq.Width = *req.Width
++		}
++		if req.Height != nil {
++			genReq.Height = *req.Height
++		}
++		if req.Steps != nil {
++			genReq.Steps = *req.Steps
++		}
++
++		// Create assistant message to store the generated image
++		chat.Messages = append(chat.Messages, store.NewMessage("assistant", "", &store.MessageOptions{Model: req.Model}))
++		if err := s.Store.SetChat(*chat); err != nil {
++			cancelLoading()
++			return err
++		}
++
++		err = c.Generate(ctx, genReq, func(res api.GenerateResponse) error {
++			if loading {
++				cancelLoading()
++				loading = false
++			}
++
++			// Send progress events during generation
++			if res.Total > 0 && !res.Done {
++				completed := res.Completed
++				total := res.Total
++				json.NewEncoder(w).Encode(responses.ChatEvent{
++					EventName: string(EventImageProgress),
++					Completed: &completed,
++					Total:     &total,
++				})
++				flusher.Flush()
++				return nil
++			}
++
++			// Send the final image
++			if res.Done && res.Image != "" {
++				imageBytes, decErr := base64.StdEncoding.DecodeString(res.Image)
++				if decErr != nil {
++					return fmt.Errorf("failed to decode image: %w", decErr)
++				}
++
++				_, imgErr := s.Store.ImgToFile(chat.ID, imageBytes, "generated.png", "image/png")
++				if imgErr != nil {
++					s.log().Error("failed to save generated image to disk", "error", imgErr)
++				}
++
++				// Store the image as an attachment on the assistant message
++				if len(chat.Messages) > 0 {
++					lastMsg := &chat.Messages[len(chat.Messages)-1]
++					lastMsg.Attachments = append(lastMsg.Attachments, store.File{
++						Filename: "generated.png",
++						Data:     imageBytes,
++					})
++					lastMsg.UpdatedAt = time.Now()
++					s.Store.UpdateLastMessage(chat.ID, *lastMsg)
++				}
++
++				image := res.Image
++				json.NewEncoder(w).Encode(responses.ChatEvent{
++					EventName: string(EventImage),
++					Image:     &image,
++				})
++				flusher.Flush()
++			}
++			return nil
++		})
++		if err != nil {
++			s.log().Error("image generation error", "error", err)
++			errorEvent := s.getError(err)
++			json.NewEncoder(w).Encode(errorEvent)
++			flusher.Flush()
++			return nil
++		}
++
++		json.NewEncoder(w).Encode(responses.ChatEvent{EventName: "done"})
++		flusher.Flush()
++
++		if len(chat.Messages) > 0 {
++			chat.Messages[len(chat.Messages)-1].Stream = false
++		}
++		return s.Store.SetChat(*chat)
++	}
+ 
+ 	var thinkValue any
+ 

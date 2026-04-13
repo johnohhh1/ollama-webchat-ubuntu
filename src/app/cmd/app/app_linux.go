@@ -37,10 +37,13 @@ static void ollama_drag_window(void* window) {
 import "C"
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -65,21 +68,46 @@ func maybeMoveAndRestart() appMove {
 var lockPath = filepath.Join(os.Getenv("HOME"), ".ollama", "app.lock")
 
 // handleExistingInstance on Linux: check for a lockfile and exit if another
-// instance already owns it. Registers cleanup on SIGINT/SIGTERM.
+// instance already owns it. Writes PID to the lockfile so stale locks from
+// crashed processes can be detected and cleaned up automatically.
 func handleExistingInstance(startHidden bool) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return
 	}
-	// Try to create the lock file exclusively.
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		// Another instance is running — just exit.
-		slog.Info("another ollama-app instance detected, exiting")
-		os.Exit(0)
+
+	// Check if an existing lock is stale (owner PID no longer running)
+	if data, err := os.ReadFile(lockPath); err == nil {
+		if pidStr := strings.TrimSpace(string(data)); pidStr != "" {
+			if pid, err := strconv.Atoi(pidStr); err == nil {
+				// Check if process is still alive
+				if proc, err := os.FindProcess(pid); err == nil {
+					if err := proc.Signal(syscall.Signal(0)); err != nil {
+						// Process is dead — stale lock, remove it
+						slog.Info("removing stale lockfile", "dead_pid", pid)
+						os.Remove(lockPath)
+					} else {
+						// Process is alive — real instance running
+						slog.Info("another ollama-app instance detected, exiting", "pid", pid)
+						os.Exit(0)
+					}
+				}
+			}
+		} else {
+			// Lock exists but has no PID (old format) — remove it
+			slog.Info("removing lockfile with no PID")
+			os.Remove(lockPath)
+		}
 	}
+
+	// Create lock with our PID
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(f, "%d", os.Getpid())
 	f.Close()
+
 	// Ensure the lock is removed when the process exits.
-	// quit() also calls removeLock(); this handles crashes via atexit equivalent.
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

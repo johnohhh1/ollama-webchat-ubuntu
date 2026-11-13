@@ -70,9 +70,9 @@ var lockPath = filepath.Join(os.Getenv("HOME"), ".ollama", "app.lock")
 // handleExistingInstance on Linux: check for a lockfile and exit if another
 // instance already owns it. Writes PID to the lockfile so stale locks from
 // crashed processes can be detected and cleaned up automatically.
-func handleExistingInstance(startHidden bool) {
+func handleExistingInstance(startHidden bool) bool {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return
+		return true
 	}
 
 	// Check if an existing lock is stale (owner PID no longer running)
@@ -88,7 +88,7 @@ func handleExistingInstance(startHidden bool) {
 					} else {
 						// Process is alive — real instance running
 						slog.Info("another ollama-app instance detected, exiting", "pid", pid)
-						os.Exit(0)
+						return false
 					}
 				}
 			}
@@ -102,7 +102,7 @@ func handleExistingInstance(startHidden bool) {
 	// Create lock with our PID
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
-		return
+		return true
 	}
 	fmt.Fprintf(f, "%d", os.Getpid())
 	f.Close()
@@ -114,6 +114,7 @@ func handleExistingInstance(startHidden bool) {
 		<-c
 		removeLock()
 	}()
+	return true
 }
 
 func removeLock() {
@@ -131,13 +132,28 @@ func UpdateAvailable(_ string) error {
 }
 
 // osRun is the platform main loop. On Linux we run the webview directly.
-func osRun(cancel func(), hasCompletedFirstRun, startHidden bool) {
-	if !startHidden {
+func osRun(cancel func(), hasCompletedFirstRun, startHidden, showOnboarding bool, urlSchemeRequest string) {
+	if urlSchemeRequest != "" {
+		handleURLSchemeInCurrentInstance(urlSchemeRequest)
+	} else if !startHidden {
 		wv.Run("/")
 	}
 	// wv.Run("/") blocks until quit() calls wv.Terminate().
 	// quit() already called removeLock() before terminating.
 	cancel()
+}
+
+// openUI shows the existing window, or opens one at path.
+func openUI(path string) {
+	if wv.IsRunning() && wv.webview != nil {
+		showWindow(wv.webview.Window())
+		return
+	}
+	wv.Run(path)
+}
+
+func openAppsUI() {
+	openUI("/connect")
 }
 
 // quit terminates the webview event loop and removes the instance lock.

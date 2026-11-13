@@ -42,7 +42,12 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		url = fmt.Sprintf("http://127.0.0.1:%d%s", w.port, path)
 	}
 	w.mutex.Lock()
-	defer w.mutex.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			w.mutex.Unlock()
+		}
+	}()
 
 	if w.webview == nil {
 		wv := webview.New(debug)
@@ -85,6 +90,7 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 			}
 		});
 
+		window.OLLAMA_PLATFORM = "linux";
 		window.OLLAMA_WEBSEARCH = true;
 		`
 		wv.Init(init)
@@ -118,6 +124,10 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		})
 
 		wv.Bind("ready", func() {
+			showWindow(wv.Window())
+		})
+
+		wv.Bind("activateOllama", func() {
 			showWindow(wv.Window())
 		})
 
@@ -278,11 +288,20 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		wv.SetSize(800, 600, webview.HintMin)
 
 		w.webview = wv
-		gtkDispatch = wv.Dispatch    // expose dispatch for tray health-check
-		initTray(wv.Window())        // create tray + intercept GTK X button
-		startTrayHealthCheck()       // background health poller
+		gtkDispatch = wv.Dispatch // expose dispatch for tray health-check
+		initTray(wv.Window())     // create tray + intercept GTK X button
+		startTrayHealthCheck()    // background health poller
 		wv.Navigate(url)
-		wv.Run() // blocks until quit() calls wv.Terminate()
+
+		// Release the lock before entering the GTK main loop. Holding it
+		// here deadlocked quit()/Terminate()/IsRunning() from the tray
+		// menu and the SIGTERM handler.
+		locked = false
+		w.mutex.Unlock()
+
+		wv.Run()     // blocks until Terminate() queues gtk_main_quit
+		wv.Destroy() // on the GTK thread, after the loop has exited
+		return nil
 	} else {
 		w.webview.Eval(fmt.Sprintf(`history.pushState({}, '', '%s');`, path))
 		showWindow(w.webview.Window())
@@ -297,8 +316,9 @@ func (w *Webview) Terminate() {
 	w.webview = nil
 	w.mutex.Unlock()
 	if wv != nil {
+		// Thread-safe: dispatches gtk_main_quit onto the GTK thread.
+		// Run() destroys the window once the loop returns.
 		wv.Terminate()
-		wv.Destroy()
 	}
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OLLAMA_TAG="v0.20.6-rc0"
+OLLAMA_TAG="v0.40.16"
 OLLAMA_REPO="https://github.com/ollama/ollama.git"
 BUILD_DIR="$(pwd)/build"
 OUT_BIN="$BUILD_DIR/ollama-app"
@@ -38,11 +38,9 @@ fi
 echo "Applying Linux port patch ..."
 git -C "$SRC" apply "$(pwd)/patches/linux-port.patch"
 
-echo "Applying image generation patch ..."
-git -C "$SRC" apply "$(pwd)/patches/image-generation.patch"
-
-echo "Applying image generation frontend patch ..."
-git -C "$SRC" apply "$(pwd)/patches/image-generation-frontend.patch"
+# Image generation patches (patches/image-generation*.patch) targeted
+# ollama v0.20.x. Upstream removed experimental image generation before
+# v0.40, so they are not applied here. See README.
 
 # ── copy new Linux source files ──────────────────────────────────────────────
 
@@ -51,6 +49,7 @@ cp src/app/cmd/app/app_linux.go        "$SRC/app/cmd/app/"
 cp src/app/cmd/app/webview_linux.go    "$SRC/app/cmd/app/"
 cp src/app/cmd/app/tray_linux.go       "$SRC/app/cmd/app/"
 cp src/app/cmd/app/filepicker_linux.go "$SRC/app/cmd/app/"
+cp src/app/cmd/app/desktop_models_linux.go "$SRC/app/cmd/app/"
 cp src/app/dialog/dlgs_linux.go        "$SRC/app/dialog/"
 cp src/app/server/server_linux.go      "$SRC/app/server/"
 cp src/app/updater/updater_linux.go    "$SRC/app/updater/"

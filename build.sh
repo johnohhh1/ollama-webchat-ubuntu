@@ -16,8 +16,8 @@ need npm
 need pkg-config
 
 pkg-config --exists gtk+-3.0        || { echo "ERROR: libgtk-3-dev not installed."; exit 1; }
-pkg-config --exists webkit2gtk-4.1
-pkg-config --exists ayatana-appindicator3-0.1 || { echo "ERROR: libayatana-appindicator3-dev not installed."; exit 1; }  || { echo "ERROR: libwebkit2gtk-4.1-dev not installed."; exit 1; }
+pkg-config --exists webkit2gtk-4.1 || { echo "ERROR: libwebkit2gtk-4.1-dev not installed."; exit 1; }
+pkg-config --exists ayatana-appindicator3-0.1 || { echo "ERROR: libayatana-appindicator3-dev not installed."; exit 1; }
 
 echo "All dependencies found."
 

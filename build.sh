@@ -38,9 +38,8 @@ fi
 echo "Applying Linux port patch ..."
 git -C "$SRC" apply "$(pwd)/patches/linux-port.patch"
 
-# Image generation patches (patches/image-generation*.patch) targeted
-# ollama v0.20.x. Upstream removed experimental image generation before
-# v0.40, so they are not applied here. See README.
+echo "Applying image generation patch ..."
+git -C "$SRC" apply "$(pwd)/patches/image-generation.patch"
 
 # ── copy new Linux source files ──────────────────────────────────────────────
 
@@ -53,6 +52,8 @@ cp src/app/cmd/app/desktop_models_linux.go "$SRC/app/cmd/app/"
 cp src/app/dialog/dlgs_linux.go        "$SRC/app/dialog/"
 cp src/app/server/server_linux.go      "$SRC/app/server/"
 cp src/app/updater/updater_linux.go    "$SRC/app/updater/"
+cp src/app/ui/imagegen.go              "$SRC/app/ui/"
+cp src/app/ui/imagegen_test.go         "$SRC/app/ui/"
 
 # ── build React frontend ─────────────────────────────────────────────────────
 

@@ -31,6 +31,7 @@ The official app ships Windows and macOS binaries only. **This port removes that
 - System tray icon (AppIndicator) — close to tray, reopen from the panel
 - Wayland-native — no XWayland required
 - Migrates your existing chat history (`~/.ollama/db.sqlite`) from older versions automatically
+- **Optional image generation** on NVIDIA GPUs: pick an image model in the chat and get a picture back (see below)
 
 ---
 
@@ -134,6 +135,46 @@ rm -f ~/.ollama/app.lock && ollama-app
 
 ---
 
+## Image generation (optional)
+
+Upstream Ollama dropped its experimental image API, so this port ships its own small runner: a Python service (`src/imagegen/imagegen_server.py`, PyTorch + diffusers) on `127.0.0.1:11435`. When it's running, its models show up in the model picker next to your Ollama models. Pick one, type a prompt, and the image appears in the chat. When it isn't running, the app behaves exactly as before.
+
+**Requirements:** NVIDIA GPU, [uv](https://docs.astral.sh/uv/), ~3 GB for Python packages, and 25–35 GB per model (downloaded from Hugging Face on first use).
+
+```bash
+bash src/imagegen/install.sh
+```
+
+This creates a venv in `~/.local/share/ollama-imagegen`, installs the runner as a systemd user service (`ollama-imagegen`), and starts it.
+
+```bash
+journalctl --user -u ollama-imagegen -f
+```
+
+**Models** live in `~/.config/ollama-imagegen/models.json`:
+
+```json
+{
+  "x/z-image-turbo": { "source": "Tongyi-MAI/Z-Image-Turbo", "guidance": 0.0, "steps": 8 },
+  "x/flux2-klein":   { "source": "black-forest-labs/FLUX.2-klein-base-4B" }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `source` | Hugging Face repo, or a local `.safetensors` path with `"type": "checkpoint"` |
+| `guidance` | CFG scale (default 3.5; turbo models want 0) |
+| `steps` | Default steps when the request doesn't set them |
+| `offload` | `model` (fast; largest component must fit in VRAM) or `sequential` (fits big models in small VRAM). `model` falls back to `sequential` automatically on out-of-memory |
+
+Idle models are unloaded after 10 minutes (`--keep-alive SECONDS` in the service file; `0` keeps them loaded).
+
+**Tested:** Z-Image-Turbo, 1024×1024, 8 steps, RTX 5070 12 GB: about 22 s per image with sequential offload.
+
+Set `OLLAMA_IMAGEGEN_HOST` before launching the app to point it at a runner elsewhere.
+
+---
+
 ## How the port works
 
 The upstream `app/` directory was gated with `//go:build windows || darwin` on ~40 files. The underlying C webview library (`webview.h`) already has full GTK/WebKit2GTK Linux support built in — only the Go build tags were blocking Linux compilation.
@@ -151,15 +192,12 @@ The upstream `app/` directory was gated with `//go:build windows || darwin` on ~
 | `app/server/server_linux.go` | Health-check only — never spawns a process, uses existing systemd service |
 | `app/updater/updater_linux.go` | All no-ops — no auto-update on Linux |
 | `app/dialog/dlgs_linux.go` | zenity dialogs (yes/no, info, error, file open/save) |
+| `app/ui/imagegen.go` + `patches/image-generation.patch` | Image models from the local runner: model list, chat routing, image events, frontend |
 | `app/ui/app/src/components/ChatSidebar.tsx` | Settings link was `isWindows`-gated; fixed to show on Linux too |
 
 ---
 
 ## Known issues
-
-### Image generation (paused)
-
-The v1.0 build (ollama v0.20.6) shipped experimental NVIDIA image generation. Upstream Ollama removed its experimental image-generation API before v0.40, so those patches (`patches/image-generation*.patch`, `src/imagegen/`) are kept in the repo but not applied. To use them, check out the `v1.0.0` tag.
 
 ### Claude Desktop / Codex integrations
 

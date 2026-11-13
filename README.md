@@ -10,7 +10,7 @@
 [![GTK](https://img.shields.io/badge/GTK-3.0-green?logo=gnome&logoColor=white)](https://gtk.org)
 [![WebKit](https://img.shields.io/badge/WebKit2GTK-4.1-orange)](https://webkitgtk.org)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://golang.org)
-[![Ollama](https://img.shields.io/badge/Ollama-v0.20.6-black)](https://ollama.com)
+[![Ollama](https://img.shields.io/badge/Ollama-v0.40.16-black)](https://ollama.com)
 [![License](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 
 This is a Linux port of the official Ollama desktop app (from the main [ollama/ollama](https://github.com/ollama/ollama) repo).  
@@ -30,7 +30,7 @@ The official app ships Windows and macOS binaries only. **This port removes that
 - Single-instance lockfile (stale locks are cleaned up automatically), zenity file/folder dialogs, dark mode
 - System tray icon (AppIndicator) — close to tray, reopen from the panel
 - Wayland-native — no XWayland required
-- **Experimental:** image generation on NVIDIA GPUs via a local diffusers server (`src/imagegen/`)
+- Migrates your existing chat history (`~/.ollama/db.sqlite`) from older versions automatically
 
 ---
 
@@ -80,7 +80,7 @@ bash build.sh
 
 The script will:
 1. Clone ollama at the pinned tag
-2. Apply the Linux port and image generation patches
+2. Apply the Linux port patch
 3. Build the React frontend (`npm run build`)
 4. Compile the Go binary
 
@@ -156,6 +156,14 @@ The upstream `app/` directory was gated with `//go:build windows || darwin` on ~
 ---
 
 ## Known issues
+
+### Image generation (paused)
+
+The v1.0 build (ollama v0.20.6) shipped experimental NVIDIA image generation. Upstream Ollama removed its experimental image-generation API before v0.40, so those patches (`patches/image-generation*.patch`, `src/imagegen/`) are kept in the repo but not applied. To use them, check out the `v1.0.0` tag.
+
+### Claude Desktop / Codex integrations
+
+These are macOS-only upstream and are hidden on Linux.
 
 ### EGL warnings on startup
 

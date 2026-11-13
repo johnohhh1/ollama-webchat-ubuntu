@@ -85,6 +85,7 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 			}
 		});
 
+		window.OLLAMA_PLATFORM = "linux";
 		window.OLLAMA_WEBSEARCH = true;
 		`
 		wv.Init(init)
@@ -118,6 +119,10 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		})
 
 		wv.Bind("ready", func() {
+			showWindow(wv.Window())
+		})
+
+		wv.Bind("activateOllama", func() {
 			showWindow(wv.Window())
 		})
 
@@ -278,9 +283,9 @@ func (w *Webview) Run(path string) unsafe.Pointer {
 		wv.SetSize(800, 600, webview.HintMin)
 
 		w.webview = wv
-		gtkDispatch = wv.Dispatch    // expose dispatch for tray health-check
-		initTray(wv.Window())        // create tray + intercept GTK X button
-		startTrayHealthCheck()       // background health poller
+		gtkDispatch = wv.Dispatch // expose dispatch for tray health-check
+		initTray(wv.Window())     // create tray + intercept GTK X button
+		startTrayHealthCheck()    // background health poller
 		wv.Navigate(url)
 		wv.Run() // blocks until quit() calls wv.Terminate()
 	} else {

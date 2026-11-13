@@ -18,6 +18,10 @@ The official app ships Windows and macOS binaries only. **This port removes that
 
 **Tested on:** Ubuntu 26.04 · GNOME 50 · Wayland · NVIDIA RTX 5070
 
+<img src="assets/screenshot.jpg" alt="Ollama Desktop on Linux generating an image of a llama flying a biplane with Z-Image-Turbo" width="720" />
+
+<sub>Ollama v0.40.16 chat UI with local image generation (Z-Image-Turbo, ~22 s on an RTX 5070)</sub>
+
 </div>
 
 ---

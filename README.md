@@ -27,8 +27,25 @@ The official app ships Windows and macOS binaries only. **This port removes that
 - A GTK3 window containing a WebKit2GTK browser rendering Ollama's React frontend
 - Talks to your existing Ollama service at `localhost:11434` — does **not** start or manage the Ollama daemon
 - Full chat UI: model selection, file attachments, settings, chat history (SQLite)
-- Single-instance lockfile, zenity file/folder dialogs, dark mode
+- Single-instance lockfile (stale locks are cleaned up automatically), zenity file/folder dialogs, dark mode
+- System tray icon (AppIndicator) — close to tray, reopen from the panel
 - Wayland-native — no XWayland required
+- **Experimental:** image generation on NVIDIA GPUs via a local diffusers server (`src/imagegen/`)
+
+---
+
+## Quick install (prebuilt binary)
+
+Grab `ollama-app` from the [latest release](https://github.com/johnohhh1/ollama-webchat-ubuntu/releases/latest), then:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 zenity
+chmod +x ollama-app
+sudo mv ollama-app /usr/local/bin/
+ollama-app
+```
+
+Prefer to build it yourself? Read on.
 
 ---
 
@@ -37,14 +54,14 @@ The official app ships Windows and macOS binaries only. **This port removes that
 ### Runtime
 
 ```bash
-sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 zenity
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 zenity
 ```
 
 ### Build
 
 ```bash
 sudo apt install \
-    libwebkit2gtk-4.1-dev libgtk-3-dev \
+    libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
     golang-go nodejs npm \
     pkg-config git
 ```
@@ -63,7 +80,7 @@ bash build.sh
 
 The script will:
 1. Clone ollama at the pinned tag
-2. Apply the Linux port patch
+2. Apply the Linux port and image generation patches
 3. Build the React frontend (`npm run build`)
 4. Compile the Go binary
 
@@ -89,11 +106,27 @@ Launch the app:
 ollama-app
 ```
 
-Or search for it in your application launcher.
+### Add it to your app launcher
+
+```bash
+mkdir -p ~/.local/share/applications ~/.local/share/icons
+curl -fsSL -o ~/.local/share/icons/ollama-app.png \
+  https://raw.githubusercontent.com/johnohhh1/ollama-webchat-ubuntu/main/assets/Ohhhllama.png
+cat > ~/.local/share/applications/ollama-app.desktop <<DESKTOP
+[Desktop Entry]
+Name=Ollama
+Comment=Chat with local LLMs
+Exec=/usr/local/bin/ollama-app
+Icon=$HOME/.local/share/icons/ollama-app.png
+Terminal=false
+Type=Application
+Categories=Utility;Development;
+DESKTOP
+```
 
 ### Stale lockfile
 
-If the app crashes without cleaning up, delete the lock before restarting:
+The app removes stale locks left by a crashed instance on its own. If it still refuses to start, clear the lock manually:
 
 ```bash
 rm -f ~/.ollama/app.lock && ollama-app
@@ -112,6 +145,7 @@ The upstream `app/` directory was gated with `//go:build windows || darwin` on ~
 | ~40 `app/**/*.go` files | Build tag: `windows \|\| darwin` → `windows \|\| darwin \|\| linux` |
 | `app/webview/webview.go` | Added Linux CGo flags: `WEBVIEW_GTK`, `gtk+-3.0`, `webkit2gtk-4.1` |
 | `app/cmd/app/app_linux.go` | GTK window management, lockfile single-instance, signal cleanup |
+| `app/cmd/app/tray_linux.go` | System tray indicator via Ayatana AppIndicator3 |
 | `app/cmd/app/webview_linux.go` | Webview struct + JS bindings (show/hide/drag/zoom/file picker) |
 | `app/cmd/app/filepicker_linux.go` | zenity directory and multi-file choosers |
 | `app/server/server_linux.go` | Health-check only — never spawns a process, uses existing systemd service |
@@ -150,3 +184,11 @@ libEGL warning: pci id for fd N: 10de:XXXX, driver (null)
 ## License
 
 The Ollama desktop app source is MIT licensed (see [ollama/ollama](https://github.com/ollama/ollama)). The Linux port files in this repo are also MIT.
+
+---
+
+<div align="center">
+
+If this saved you from running Ollama in a browser tab, a ⭐ helps other Linux folks find it.
+
+</div>

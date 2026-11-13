@@ -1,0 +1,11 @@
+[Unit]
+Description=Ollama Linux app image generation runner
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/share/ollama-imagegen/venv/bin/python %h/.local/share/ollama-imagegen/imagegen_server.py --port 11435
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,3 +1,489 @@
+diff --git a/app/ui/app/codegen/gotypes.gen.ts b/app/ui/app/codegen/gotypes.gen.ts
+index 1860e90..7e8c09f 100644
+--- a/app/ui/app/codegen/gotypes.gen.ts
++++ b/app/ui/app/codegen/gotypes.gen.ts
+@@ -324,7 +324,7 @@ export class ModelCapabilitiesResponse {
+     }
+ }
+ export class ChatEvent {
+-    eventName: "chat" | "thinking" | "assistant_with_tools" | "tool_call" | "tool" | "tool_result" | "done" | "chat_created";
++    eventName: "chat" | "thinking" | "assistant_with_tools" | "tool_call" | "tool" | "tool_result" | "done" | "chat_created" | "image_progress" | "image";
+     content?: string;
+     thinking?: string;
+     thinkingTimeStart?: Date | undefined;
+@@ -336,6 +336,9 @@ export class ChatEvent {
+     toolResultData?: any;
+     chatId?: string;
+     toolState?: any;
++    image?: string;
++    completed?: number;
++    total?: number;
+ 
+     constructor(source: any = {}) {
+         if ('string' === typeof source) source = JSON.parse(source);
+@@ -351,6 +354,9 @@ export class ChatEvent {
+         this.toolResultData = source["toolResultData"];
+         this.chatId = source["chatId"];
+         this.toolState = source["toolState"];
++        this.image = source["image"];
++        this.completed = source["completed"];
++        this.total = source["total"];
+     }
+ 
+ 	convertValues(a: any, classs: any, asMap: boolean = false): any {
+@@ -516,6 +522,9 @@ export class ChatRequest {
+     file_tools?: boolean;
+     forceUpdate?: boolean;
+     think?: any;
++    width?: number;
++    height?: number;
++    steps?: number;
+ 
+     constructor(source: any = {}) {
+         if ('string' === typeof source) source = JSON.parse(source);
+@@ -527,6 +536,9 @@ export class ChatRequest {
+         this.file_tools = source["file_tools"];
+         this.forceUpdate = source["forceUpdate"];
+         this.think = source["think"];
++        this.width = source["width"];
++        this.height = source["height"];
++        this.steps = source["steps"];
+     }
+ 
+ 	convertValues(a: any, classs: any, asMap: boolean = false): any {
+diff --git a/app/ui/app/src/api.ts b/app/ui/app/src/api.ts
+index da90022..b77b0ab 100644
+--- a/app/ui/app/src/api.ts
++++ b/app/ui/app/src/api.ts
+@@ -349,6 +349,7 @@ export async function* sendMessage(
+   fileTools?: boolean,
+   forceUpdate?: boolean,
+   think?: boolean | string,
++  imageGenParams?: { width?: number; height?: number; steps?: number },
+ ): AsyncGenerator<ChatEventUnion> {
+   // Convert Uint8Array to base64 for JSON serialization
+   const serializedAttachments = attachments?.map((att) => ({
+@@ -379,6 +380,9 @@ export async function* sendMessage(
+         file_tools: fileTools ?? false,
+         ...(forceUpdate !== undefined ? { forceUpdate } : {}),
+         ...(shouldSendThink ? { think } : {}),
++        ...(imageGenParams?.width !== undefined ? { width: imageGenParams.width } : {}),
++        ...(imageGenParams?.height !== undefined ? { height: imageGenParams.height } : {}),
++        ...(imageGenParams?.steps !== undefined ? { steps: imageGenParams.steps } : {}),
+       }),
+     ),
+     signal,
+diff --git a/app/ui/app/src/components/ChatForm.tsx b/app/ui/app/src/components/ChatForm.tsx
+index b0ae1af..11f1a2e 100644
+--- a/app/ui/app/src/components/ChatForm.tsx
++++ b/app/ui/app/src/components/ChatForm.tsx
+@@ -20,6 +20,7 @@ import { useSelectedModel } from "@/hooks/useSelectedModel";
+ import {
+   useHasVisionCapability,
+   useHasToolsCapability,
++  useHasImageCapability,
+ } from "@/hooks/useModelCapabilities";
+ import { useUser } from "@/hooks/useUser";
+ import { DisplayLogin } from "@/components/DisplayLogin";
+@@ -114,6 +115,11 @@ function ChatForm({
+   const isDownloading = isDownloadingModel;
+   const { selectedModel } = useSelectedModel();
+   const hasVisionCapability = useHasVisionCapability(selectedModel?.model);
++  const hasImageCapability = useHasImageCapability(selectedModel?.model);
++  const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
++  const [imageWidth, setImageWidth] = useState(1024);
++  const [imageHeight, setImageHeight] = useState(1024);
++  const [imageSteps, setImageSteps] = useState(4);
+   const { isAuthenticated, isLoading: isLoadingUser } = useUser();
+   const [loginPromptFeature, setLoginPromptFeature] = useState<
+     "webSearch" | "turbo" | null
+@@ -511,6 +517,9 @@ function ChatForm({
+         attachments: attachmentsToSend,
+         webSearch: useWebSearch,
+         think: useThink,
++        imageGenParams: hasImageCapability
++          ? { width: imageWidth, height: imageHeight, steps: imageSteps }
++          : undefined,
+         onChatEvent: (event) => {
+           if (event.eventName === "chat_created" && event.chatId) {
+             navigate({
+@@ -855,6 +864,66 @@ function ChatForm({
+           </div>
+         )}
+ 
++        {/* Image generation settings (collapsible) */}
++        {hasImageCapability && (
++          <div className="w-full px-5 pb-1">
++            <button
++              type="button"
++              onClick={() => setImageSettingsOpen(!imageSettingsOpen)}
++              className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer"
++            >
++              <svg
++                className={`w-3 h-3 transition-transform ${imageSettingsOpen ? "rotate-90" : ""}`}
++                fill="none"
++                viewBox="0 0 24 24"
++                stroke="currentColor"
++              >
++                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
++              </svg>
++              Image Settings
++            </button>
++            {imageSettingsOpen && (
++              <div className="flex items-center gap-3 mt-1.5 text-xs text-neutral-600 dark:text-neutral-400">
++                <label className="flex items-center gap-1">
++                  W:
++                  <input
++                    type="number"
++                    value={imageWidth}
++                    onChange={(e) => setImageWidth(Number(e.target.value))}
++                    className="w-16 px-1.5 py-0.5 border rounded dark:bg-neutral-700 dark:border-neutral-600 bg-white"
++                    min={256}
++                    max={2048}
++                    step={64}
++                  />
++                </label>
++                <label className="flex items-center gap-1">
++                  H:
++                  <input
++                    type="number"
++                    value={imageHeight}
++                    onChange={(e) => setImageHeight(Number(e.target.value))}
++                    className="w-16 px-1.5 py-0.5 border rounded dark:bg-neutral-700 dark:border-neutral-600 bg-white"
++                    min={256}
++                    max={2048}
++                    step={64}
++                  />
++                </label>
++                <label className="flex items-center gap-1">
++                  Steps:
++                  <input
++                    type="number"
++                    value={imageSteps}
++                    onChange={(e) => setImageSteps(Number(e.target.value))}
++                    className="w-12 px-1.5 py-0.5 border rounded dark:bg-neutral-700 dark:border-neutral-600 bg-white"
++                    min={1}
++                    max={50}
++                  />
++                </label>
++              </div>
++            )}
++          </div>
++        )}
++
+         <div className="relative w-full px-5">
+           <textarea
+             ref={textareaRef}
+diff --git a/app/ui/app/src/components/ImageThumbnail.tsx b/app/ui/app/src/components/ImageThumbnail.tsx
+index 04ee837..ca5f47a 100644
+--- a/app/ui/app/src/components/ImageThumbnail.tsx
++++ b/app/ui/app/src/components/ImageThumbnail.tsx
+@@ -1,4 +1,4 @@
+-import { useMemo, useEffect, useState } from "react";
++import { useEffect, useState } from "react";
+ import { isImageFile } from "@/utils/imageUtils";
+ 
+ export interface ImageData {
+@@ -21,75 +21,21 @@ export function ImageThumbnail({
+   onError,
+ }: ImageThumbnailProps) {
+   const [imageLoadError, setImageLoadError] = useState(false);
++  const [imageUrl, setImageUrl] = useState("");
+ 
+-  const imageUrl = useMemo(() => {
+-    if (!isImageFile(image.filename)) return "";
+-
+-    try {
+-      // Determine MIME type from file extension
+-      const extension = image.filename.toLowerCase().split(".").pop();
+-      let mimeType = "application/octet-stream";
+-
+-      switch (extension) {
+-        case "png":
+-          mimeType = "image/png";
+-          break;
+-        case "jpg":
+-        case "jpeg":
+-          mimeType = "image/jpeg";
+-          break;
+-        case "gif":
+-          mimeType = "image/gif";
+-          break;
+-        case "webp":
+-          mimeType = "image/webp";
+-          break;
+-      }
+-
+-      // Convert to Uint8Array if needed
+-      let bytes: Uint8Array;
+-      if (image.data instanceof Uint8Array) {
+-        bytes = image.data;
+-      } else if (Array.isArray(image.data)) {
+-        bytes = new Uint8Array(image.data);
+-      } else if (typeof image.data === "string") {
+-        // Convert base64 string to Uint8Array
+-        const binaryString = atob(image.data);
+-        bytes = new Uint8Array(binaryString.length);
+-        for (let i = 0; i < binaryString.length; i++) {
+-          bytes[i] = binaryString.charCodeAt(i);
+-        }
+-      } else {
+-        console.error(
+-          "Invalid data format for:",
+-          image.filename,
+-          typeof image.data,
+-        );
+-        return "";
+-      }
+-
+-      const blob = new Blob([bytes], { type: mimeType });
+-      return URL.createObjectURL(blob);
+-    } catch (error) {
+-      console.error(
+-        "Error converting file data to URL for",
+-        image.filename,
+-        ":",
+-        error,
+-      );
+-      return "";
+-    }
+-  }, [image]);
+-
+-  // Cleanup blob URL on unmount and reset error state when image changes
++  // Create the blob URL in the same effect that revokes it. Creating it in
++  // useMemo and revoking it in an effect cleanup breaks under StrictMode:
++  // the simulated unmount revokes the URL and the remount reuses it.
+   useEffect(() => {
++    const url = imageToObjectURL(image);
++    setImageUrl(url);
+     setImageLoadError(false);
+     return () => {
+-      if (imageUrl) {
+-        URL.revokeObjectURL(imageUrl);
++      if (url) {
++        URL.revokeObjectURL(url);
+       }
+     };
+-  }, [imageUrl]);
++  }, [image]);
+ 
+   if (!isImageFile(image.filename) || !imageUrl) {
+     return null;
+@@ -129,3 +75,62 @@ export function ImageThumbnail({
+     />
+   );
+ }
++
++function imageToObjectURL(image: ImageData): string {
++  if (!isImageFile(image.filename)) return "";
++
++  try {
++    // Determine MIME type from file extension
++    const extension = image.filename.toLowerCase().split(".").pop();
++    let mimeType = "application/octet-stream";
++
++    switch (extension) {
++      case "png":
++        mimeType = "image/png";
++        break;
++      case "jpg":
++      case "jpeg":
++        mimeType = "image/jpeg";
++        break;
++      case "gif":
++        mimeType = "image/gif";
++        break;
++      case "webp":
++        mimeType = "image/webp";
++        break;
++    }
++
++    // Convert to Uint8Array if needed
++    let bytes: Uint8Array;
++    if (image.data instanceof Uint8Array) {
++      bytes = image.data;
++    } else if (Array.isArray(image.data)) {
++      bytes = new Uint8Array(image.data);
++    } else if (typeof image.data === "string") {
++      // Convert base64 string to Uint8Array
++      const binaryString = atob(image.data);
++      bytes = new Uint8Array(binaryString.length);
++      for (let i = 0; i < binaryString.length; i++) {
++        bytes[i] = binaryString.charCodeAt(i);
++      }
++    } else {
++      console.error(
++        "Invalid data format for:",
++        image.filename,
++        typeof image.data,
++      );
++      return "";
++    }
++
++    const blob = new Blob([bytes], { type: mimeType });
++    return URL.createObjectURL(blob);
++  } catch (error) {
++    console.error(
++      "Error converting file data to URL for",
++      image.filename,
++      ":",
++      error,
++    );
++    return "";
++  }
++}
+diff --git a/app/ui/app/src/components/Message.tsx b/app/ui/app/src/components/Message.tsx
+index 322102f..e7179c5 100644
+--- a/app/ui/app/src/components/Message.tsx
++++ b/app/ui/app/src/components/Message.tsx
+@@ -905,6 +905,26 @@ function OtherRoleMessage({
+           />
+         )}
+ 
++        {/* Generated image attachments on assistant messages */}
++        {message.role === "assistant" &&
++          message.attachments &&
++          message.attachments.length > 0 &&
++          message.attachments.some((a: File) => isImageFile(a.filename)) && (
++            <div className="flex flex-col gap-2 mb-2 max-w-lg">
++              {message.attachments
++                .filter((a: File) => isImageFile(a.filename))
++                .map((attachment: File, index: number) => (
++                  <div key={`gen-image-${index}`} className="flex-shrink-0">
++                    <ImageThumbnail
++                      image={attachment}
++                      className="max-w-full rounded-lg"
++                      alt="Generated image"
++                    />
++                  </div>
++                ))}
++            </div>
++          )}
++
+         {/* Only render content div if there's actual content to show */}
+         {(() => {
+           // Skip rendering content div for tool messages with structured tool_calls
+diff --git a/app/ui/app/src/hooks/useChats.ts b/app/ui/app/src/hooks/useChats.ts
+index 5aac352..0b6c59b 100644
+--- a/app/ui/app/src/hooks/useChats.ts
++++ b/app/ui/app/src/hooks/useChats.ts
+@@ -241,6 +241,7 @@ export const useSendMessage = (chatId: string) => {
+       fileTools,
+       forceUpdate,
+       think,
++      imageGenParams,
+       onChatEvent,
+     }: {
+       message: string;
+@@ -250,6 +251,7 @@ export const useSendMessage = (chatId: string) => {
+       fileTools?: boolean;
+       forceUpdate?: boolean;
+       think?: boolean | string;
++      imageGenParams?: { width?: number; height?: number; steps?: number };
+       onChatEvent?: (event: ChatEventUnion) => void;
+     }) => {
+       // For existing chats, set streaming state and add optimistic user message
+@@ -326,6 +328,7 @@ export const useSendMessage = (chatId: string) => {
+         fileTools,
+         forceUpdate,
+         think,
++        imageGenParams,
+       );
+       let currentChatId = chatId;
+       let isCancelled = false;
+@@ -588,6 +591,79 @@ export const useSendMessage = (chatId: string) => {
+             );
+             break;
+           }
++          case "image_progress": {
++            // Update assistant message with generation progress text
++            batcher.scheduleBatch((old: { chat: Chat } | undefined) => {
++              if (!old) return old;
++              const newMessages = [...(old.chat.messages || [])];
++              let lastMessage = newMessages[newMessages.length - 1];
++              if (!lastMessage || lastMessage.role !== "assistant") {
++                newMessages.push(
++                  new Message({
++                    role: "assistant",
++                    content: "",
++                    model: effectiveModel,
++                  }),
++                );
++                lastMessage = newMessages[newMessages.length - 1];
++              }
++              const completed = (event as any).completed ?? 0;
++              const total = (event as any).total ?? 0;
++              newMessages[newMessages.length - 1] = new Message({
++                ...lastMessage,
++                content: `Generating image... ${completed}/${total} steps`,
++              });
++              return {
++                ...old,
++                chat: new Chat({ ...old.chat, messages: newMessages }),
++              };
++            });
++            break;
++          }
++          case "image": {
++            // Image generation complete — add the image as an attachment
++            batcher.scheduleBatch((old: { chat: Chat } | undefined) => {
++              if (!old) return old;
++              const newMessages = [...(old.chat.messages || [])];
++              let lastMessage = newMessages[newMessages.length - 1];
++              if (!lastMessage || lastMessage.role !== "assistant") {
++                newMessages.push(
++                  new Message({
++                    role: "assistant",
++                    content: "",
++                    model: effectiveModel,
++                  }),
++                );
++                lastMessage = newMessages[newMessages.length - 1];
++              }
++
++              const imageData = (event as any).image as string | undefined;
++              if (imageData) {
++                const binaryString = atob(imageData);
++                const bytes = new Array(binaryString.length);
++                for (let i = 0; i < binaryString.length; i++) {
++                  bytes[i] = binaryString.charCodeAt(i);
++                }
++                const attachment = {
++                  filename: "generated.png",
++                  data: bytes,
++                };
++                newMessages[newMessages.length - 1] = new Message({
++                  ...lastMessage,
++                  content: "",
++                  attachments: [
++                    ...(lastMessage.attachments || []),
++                    attachment,
++                  ],
++                });
++              }
++              return {
++                ...old,
++                chat: new Chat({ ...old.chat, messages: newMessages }),
++              };
++            });
++            break;
++          }
+           case "download": {
+             setDownloadProgress((prev) => {
+               const newMap = new Map(prev);
+diff --git a/app/ui/app/src/hooks/useModelCapabilities.ts b/app/ui/app/src/hooks/useModelCapabilities.ts
+index f5c84a4..379a57c 100644
+--- a/app/ui/app/src/hooks/useModelCapabilities.ts
++++ b/app/ui/app/src/hooks/useModelCapabilities.ts
+@@ -25,3 +25,8 @@ export function useHasToolsCapability(modelName: string | undefined) {
+   const { data: capabilitiesResponse } = useModelCapabilities(modelName);
+   return capabilitiesResponse?.capabilities?.includes("tools") ?? false;
+ }
++
++export function useHasImageCapability(modelName: string | undefined) {
++  const { data: capabilitiesResponse } = useModelCapabilities(modelName);
++  return capabilitiesResponse?.capabilities?.includes("image") ?? false;
++}
 diff --git a/app/ui/responses/types.go b/app/ui/responses/types.go
 index 35597d3..1480288 100644
 --- a/app/ui/responses/types.go
@@ -36,118 +522,31 @@ index 35597d3..1480288 100644
  
  type Error struct {
 diff --git a/app/ui/ui.go b/app/ui/ui.go
-index 306f2c0..384bad9 100644
+index 0606237..e9b5ee8 100644
 --- a/app/ui/ui.go
 +++ b/app/ui/ui.go
-@@ -91,8 +91,10 @@ const (
- 	EventLoading    Event = "loading"
- 	EventToolResult Event = "tool_result" // Used for both tool calls and their results
- 	EventThinking   Event = "thinking"
--	EventToolCall   Event = "tool_call"
--	EventDownload   Event = "download"
-+	EventToolCall      Event = "tool_call"
-+	EventDownload      Event = "download"
-+	EventImageProgress Event = "image_progress"
-+	EventImage         Event = "image"
- )
+@@ -307,8 +307,8 @@ func (s *Server) Handler() http.Handler {
  
- type Server struct {
-@@ -815,6 +817,98 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) error {
- 		return nil
- 	}
- 	think := slices.Contains(details.Capabilities, model.CapabilityThinking)
-+	isImageModel := slices.Contains(details.Capabilities, model.CapabilityImage)
-+
-+	// Image generation models use /api/generate, not /api/chat
-+	if isImageModel {
-+		genReq := &api.GenerateRequest{
-+			Model:  req.Model,
-+			Prompt: req.Prompt,
-+		}
-+		if req.Width != nil {
-+			genReq.Width = *req.Width
-+		}
-+		if req.Height != nil {
-+			genReq.Height = *req.Height
-+		}
-+		if req.Steps != nil {
-+			genReq.Steps = *req.Steps
-+		}
-+
-+		// Create assistant message to store the generated image
-+		chat.Messages = append(chat.Messages, store.NewMessage("assistant", "", &store.MessageOptions{Model: req.Model}))
-+		if err := s.Store.SetChat(*chat); err != nil {
-+			cancelLoading()
-+			return err
-+		}
-+
-+		err = c.Generate(ctx, genReq, func(res api.GenerateResponse) error {
-+			if loading {
-+				cancelLoading()
-+				loading = false
-+			}
-+
-+			// Send progress events during generation
-+			if res.Total > 0 && !res.Done {
-+				completed := res.Completed
-+				total := res.Total
-+				json.NewEncoder(w).Encode(responses.ChatEvent{
-+					EventName: string(EventImageProgress),
-+					Completed: &completed,
-+					Total:     &total,
-+				})
-+				flusher.Flush()
-+				return nil
-+			}
-+
-+			// Send the final image
-+			if res.Done && res.Image != "" {
-+				imageBytes, decErr := base64.StdEncoding.DecodeString(res.Image)
-+				if decErr != nil {
-+					return fmt.Errorf("failed to decode image: %w", decErr)
-+				}
-+
-+				_, imgErr := s.Store.ImgToFile(chat.ID, imageBytes, "generated.png", "image/png")
-+				if imgErr != nil {
-+					s.log().Error("failed to save generated image to disk", "error", imgErr)
-+				}
-+
-+				// Store the image as an attachment on the assistant message
-+				if len(chat.Messages) > 0 {
-+					lastMsg := &chat.Messages[len(chat.Messages)-1]
-+					lastMsg.Attachments = append(lastMsg.Attachments, store.File{
-+						Filename: "generated.png",
-+						Data:     imageBytes,
-+					})
-+					lastMsg.UpdatedAt = time.Now()
-+					s.Store.UpdateLastMessage(chat.ID, *lastMsg)
-+				}
-+
-+				image := res.Image
-+				json.NewEncoder(w).Encode(responses.ChatEvent{
-+					EventName: string(EventImage),
-+					Image:     &image,
-+				})
-+				flusher.Flush()
-+			}
-+			return nil
-+		})
-+		if err != nil {
-+			s.log().Error("image generation error", "error", err)
-+			errorEvent := s.getError(err)
-+			json.NewEncoder(w).Encode(errorEvent)
-+			flusher.Flush()
-+			return nil
-+		}
-+
-+		json.NewEncoder(w).Encode(responses.ChatEvent{EventName: "done"})
-+		flusher.Flush()
-+
-+		if len(chat.Messages) > 0 {
-+			chat.Messages[len(chat.Messages)-1].Stream = false
-+		}
-+		return s.Store.SetChat(*chat)
+ 	// Ollama proxy endpoints
+ 	ollamaProxy := s.ollamaProxy()
+-	mux.Handle("GET /api/tags", ollamaProxy)
+-	mux.Handle("POST /api/show", ollamaProxy)
++	mux.Handle("GET /api/tags", s.withImageModelsList(ollamaProxy))
++	mux.Handle("POST /api/show", s.withImageModelsShow(ollamaProxy))
+ 	mux.Handle("GET /api/version", ollamaProxy)
+ 	mux.Handle("GET /api/status", ollamaProxy)
+ 	mux.Handle("HEAD /api/version", ollamaProxy)
+@@ -831,6 +831,13 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) error {
+ 
+ 	c := s.inferenceClient()
+ 
++	// Image models are served by the optional local image runner, not by
++	// the Ollama server, so skip the show/pull round trip for them.
++	if imgRunner.IsImageModel(ctx, req.Model) {
++		cancelLoading()
++		return s.imageChat(ctx, w, flusher, chat, req)
 +	}
- 
- 	var thinkValue any
- 
++
+ 	// Check if the model exists locally by trying to show it
+ 	// TODO (jmorganca): skip this round trip and instead just act
+ 	// on a 404 error on chat
